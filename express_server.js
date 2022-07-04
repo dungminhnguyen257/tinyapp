@@ -3,6 +3,8 @@ const app = express();
 const PORT = 8080;
 const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
+const bcrypt = require("bcryptjs");
+const salt = bcrypt.genSaltSync(10);
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -158,8 +160,9 @@ app.post("/register", (req, res) => {
         "This email already exists. Please <a href='/register'>try again!</a>"
       );
   }
+  const hashedPassword = bcrypt.hashSync(password, salt);
   const id = generateRandomString(6);
-  users[id] = { id, email, password };
+  users[id] = { id, email, hashedPassword };
   res.cookie("user_id", id);
   res.redirect("/urls");
 });
@@ -213,7 +216,7 @@ app.post("/login", (req, res) => {
       );
   }
   const user = checkRegistration(email);
-  if (!user || user.password !== password) {
+  if (!user || !bcrypt.compareSync(password, user.hashedPassword)) {
     return res
       .status(403)
       .send(
