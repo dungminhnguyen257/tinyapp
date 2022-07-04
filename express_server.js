@@ -54,18 +54,21 @@ app.get("/u/:shortURL", (req, res) => {
   if (urlDatabase[req.params.shortURL]) {
     const longURL = urlDatabase[req.params.shortURL];
     res.redirect(longURL);
-  }
-  else {
+  } else {
     res.end("404 Not Found");
   }
 });
 
 app.post("/urls", (req, res) => {
-  console.log(req.body); // Log the POST request body to the console
-  // res.send("shortUrl:" + generateRandomString(6));
+  console.log(req.body);
   const shortURL = generateRandomString(6);
   urlDatabase[shortURL] = req.body.longURL;
   res.redirect(`/urls/${shortURL}`);
+});
+
+app.post("/urls/:shortURL/delete", (req, res) => {
+  delete urlDatabase[req.params.shortURL];   
+  res.redirect("/urls");  
 });
 
 app.listen(PORT, () => {
