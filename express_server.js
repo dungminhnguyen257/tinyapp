@@ -2,13 +2,18 @@ const express = require("express");
 const app = express();
 const PORT = 8080;
 const bodyParser = require("body-parser");
-const cookieParser = require("cookie-parser");
+const cookieSession = require("cookie-session");
 const bcrypt = require("bcryptjs");
 const salt = bcrypt.genSaltSync(10);
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(cookieParser());
+app.use(
+  cookieSession({
+    name: "session",
+    keys: ["key1", "key2"],
+  })
+);
 
 app.set("view engine", "ejs");
 
@@ -35,6 +40,14 @@ const users = {
     password: "2",
   },
 };
+
+const verifyUser = (req, res, next) => {
+  if (req.session["user_id"]) {
+    req.verifyUser = req.session["user_id"];
+  }
+  next();
+};
+app.use(verifyUser);
 
 function generateRandomString(n) {
   let result = "";
@@ -65,10 +78,10 @@ const urlsForUser = (user_id) => {
 };
 
 app.get("/", (req, res) => {
-  if (!req.cookies["user_id"]) {
+  if (!req.verifyUser) {
     res.redirect("/login");
   }
-  res.redirect("/urls");
+  return res.redirect("/urls");
 });
 
 app.get("/urls.json", (req, res) => {
@@ -80,48 +93,48 @@ app.get("/hello", (req, res) => {
 });
 
 app.get("/urls", (req, res) => {
-  if (!req.cookies["user_id"]) {
+  if (!req.verifyUser) {
     return res.status(401).send("Please <a href='/login'>login</a> first.");
   }
   const templateVars = {
-    urls: urlsForUser(req.cookies["user_id"]),
-    user: users[req.cookies["user_id"]],
+    urls: urlsForUser(req.verifyUser, urlDatabase),
+    user: users[req.verifyUser],
   };
   res.render("urls_index", templateVars);
 });
 
 app.get("/register", (req, res) => {
-  if (req.cookies["user_id"]) {
+  if (req.verifyUser) {
     return res.redirect("/urls");
   }
   const templateVars = {
-    user: users[req.cookies["user_id"]],
+    user: users[req.verifyUser],
   };
   res.render("urls_register", templateVars);
 });
 
 app.get("/login", (req, res) => {
-  if (req.cookies["user_id"]) {
+  if (req.verifyUser) {
     return res.redirect("/urls");
   }
   const templateVars = {
-    user: users[req.cookies["user_id"]],
+    user: users[req.verifyUser],
   };
   res.render("urls_login", templateVars);
 });
 
 app.get("/urls/new", (req, res) => {
-  if (!req.cookies["user_id"]) {
+  if (!req.verifyUser) {
     return res.redirect("/login");
   }
   const templateVars = {
-    user: users[req.cookies["user_id"]],
+    user: users[req.verifyUser],
   };
   res.render("urls_new", templateVars);
 });
 
 app.get("/urls/:shortURL", (req, res) => {
-  if (urlDatabase[req.params.shortURL].userID !== req.cookies["user_id"]) {
+  if (urlDatabase[req.params.shortURL].userID !== req.verifyUser) {
     return res
       .status(403)
       .send("Invalid credentials. Please <a href='/login'>try again!</a>");
@@ -129,7 +142,7 @@ app.get("/urls/:shortURL", (req, res) => {
   const templateVars = {
     shortURL: req.params.shortURL,
     longURL: urlDatabase[req.params.shortURL].longURL,
-    user: users[req.cookies["user_id"]],
+    user: users[req.verifyUser],
   };
   res.render("urls_show", templateVars);
 });
@@ -163,19 +176,19 @@ app.post("/register", (req, res) => {
   const hashedPassword = bcrypt.hashSync(password, salt);
   const id = generateRandomString(6);
   users[id] = { id, email, hashedPassword };
-  res.cookie("user_id", id);
+  req.session["user_id"] = id;
   res.redirect("/urls");
 });
 
 app.post("/urls", (req, res) => {
-  if (!req.cookies["user_id"]) {
+  if (!req.verifyUser) {
     return res.status(404).send("Please <a href='/login'>try again!</a>");
   }
   const shortURL = generateRandomString(6);
   urlDatabase[shortURL] = req.body.longURL;
   urlDatabase[shortURL] = {
     longURL: req.body.longURL,
-    userID: req.cookies["user_id"],
+    userID: req.verifyUser,
   };
   res.redirect(`/urls/${shortURL}`);
 });
@@ -184,7 +197,7 @@ app.post("/urls/:id", (req, res) => {
   if (!urlDatabase[req.params.id]) {
     return res.status(404).send("URL can not be found.");
   }
-  if (urlDatabase[req.params.id].userID !== req.cookies["user_id"]) {
+  if (urlDatabase[req.params.id].userID !== req.verifyUser) {
     return res
       .status(403)
       .send("No permission to update. Please <a href='/login'>try again!</a>");
@@ -197,7 +210,7 @@ app.post("/urls/:shortURL/delete", (req, res) => {
   if (!urlDatabase[req.params.shortURL]) {
     return res.status(404).send("This URL can not be found");
   }
-  if (urlDatabase[req.params.shortURL].userID !== req.cookies["user_id"]) {
+  if (urlDatabase[req.params.shortURL].userID !== req.verifyUser) {
     return res
       .status(403)
       .send("No permission to delete. Please <a href='/login'>try again!</a>");
@@ -223,12 +236,12 @@ app.post("/login", (req, res) => {
         "Incorrect email or password. Please <a href='/login'>try again!</a>"
       );
   }
-  res.cookie("user_id", user.id);
-  res.redirect("urls");
+  req.session["user_id"] = user.id;
+  res.redirect("/urls");
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("user_id");
+  req.session = null;
   res.redirect("/login");
 });
 
